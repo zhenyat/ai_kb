@@ -1,0 +1,22 @@
+[
+  {
+    "id": "2026-06-09-001-chain-of-thought",
+    "date": "2026-06-09",
+    "topic": "prompt-engineering",
+    "topic_ru": "Промпт-инжиниринг",
+    "subtopic": "chain-of-thought",
+    "source": "manual",
+    "url": "https://www.promptingguide.ai/techniques/cot",
+    "project": null,
+    "file_path": "topics/prompt-engineering/2026-06-09-001-chain-of-thought.md",
+    "models": [
+      "claude",
+      "gemini"
+    ],
+    "tags": [
+      "comparison",
+      "reasoning",
+      "step-by-step"
+    ]
+  }
+]
