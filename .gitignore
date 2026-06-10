@@ -1,0 +1,29 @@
+# .gitignore
+# AI Knowledge Base — GitHub private repo
+# 2026-06-09 | Claude Sonnet 4.6
+
+# --- SQLite binary (non-diffable) ---
+# Canonical DB state is tracked via db/entries.json instead
+db/index.sqlite3
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- VS Code ---
+.vscode/settings.json
+.vscode/launch.json
+# Keep .vscode/extensions.json if you want to share recommended extensions
+
+# --- Temporary / scratch files ---
+*.tmp
+*.bak
+*.swp

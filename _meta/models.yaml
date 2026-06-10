@@ -1,0 +1,30 @@
+# _meta/models.yaml
+# AI Model registry for the AI Knowledge Base
+# 2026-06-09 | Claude Sonnet 4.6
+#
+# RULES:
+#   - Register a model here before referencing it in any entry frontmatter
+#   - Update current_version when you switch to a newer model version
+#   - knowledge_cutoff: use ISO 8601 date or 'unknown'
+
+models:
+  claude:
+    full_name: "Claude (Anthropic)"
+    current_version: "claude-sonnet-4-6"
+    knowledge_cutoff: "2025-08-01"
+    interface: "claude.ai / API"
+    notes: "Primary model used for KB construction"
+
+  deepseek:
+    full_name: "DeepSeek"
+    current_version: "DeepSeek-V3"
+    knowledge_cutoff: "2024-07-01"
+    interface: "chat.deepseek.com / API"
+    notes: ""
+
+  gemini:
+    full_name: "Gemini (Google)"
+    current_version: "gemini-2.5-pro"
+    knowledge_cutoff: "2025-01-01"
+    interface: "gemini.google.com / API"
+    notes: ""

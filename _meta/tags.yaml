@@ -1,0 +1,37 @@
+# _meta/tags.yaml
+# Controlled vocabulary for the AI Knowledge Base
+# 2026-06-09 | Claude Sonnet 4.6
+#
+# RULES:
+#   - topic_ru values are canonical — never type them freehand in entry frontmatter
+#   - To add a topic: add it here first, then create the folder under topics/
+#   - To rename a label: update here AND re-run db/sync.py --dry-run to catch stale entries
+
+topics:
+  prompt-engineering:
+    ru: "Промпт-инжиниринг"
+    description: "Techniques for designing and optimizing prompts"
+
+  rag-and-retrieval:
+    ru: "RAG и поиск"
+    description: "Retrieval-Augmented Generation, vector search, embeddings"
+
+  agents-and-tools:
+    ru: "Агенты и инструменты"
+    description: "AI agents, tool use, function calling, multi-step reasoning"
+
+  fine-tuning:
+    ru: "Дообучение моделей"
+    description: "Fine-tuning, RLHF, LoRA, model adaptation techniques"
+
+  model-evaluation:
+    ru: "Оценка моделей"
+    description: "Benchmarks, evals, model comparison methodology"
+
+  ai-in-process-optimization:
+    ru: "ИИ в оптимизации процессов"
+    description: "Applying AI to IT workflows, automation, process improvement"
+
+  fundamentals:
+    ru: "Основы ИИ"
+    description: "Core AI/ML concepts, architectures, terminology"
