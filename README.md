@@ -7,14 +7,14 @@ learning and experimentation across multiple models.
 
 ## Stack
 
-| Component | Choice |
-|---|---|
-| OS | macOS Tahoe 26.5.1 (Mac mini M4) |
-| Editor | VS Code 1.123.0 |
-| Primary format | Markdown `.md` (HTML on demand) |
-| Structured data | SQLite3 (`db/index.sqlite3`) |
-| Backup / export | `db/entries.json` |
-| Version control | GitHub — private repository |
+| Component       | Choice                           |
+|-----------------|----------------------------------|
+| OS              | macOS Tahoe 26.5.1 (Mac mini M4) |
+| Editor          | VS Code 1.123.0                  |
+| Primary format  | Markdown `.md` (HTML on demand)  |
+| Structured data | SQLite3 (`db/index.sqlite3`)     |
+| Backup / export | `db/entries.json`                |
+| Version control | GitHub — private repository       |
 
 ---
 
@@ -49,9 +49,12 @@ ai-knowledge-base/
 │   └── kb-construction/
 │
 ├── conversations/                   # Raw captured material (append-only)
-│   ├── exports/
-│   └── snippets/
-│
+│   ├── exports/                     # Full conversation files exported directly from an AI interface
+|   |                                #   — the complete session as it was delivered by the platform.
+│   └── snippets/                    # Fragments manually copy-pasted from a conversation — a single 
+|                                    #   exchange, a specific response, or a prompt you want to 
+|                                    #   preserve but don't have the full session for
+| 
 └── db/
     ├── sync.py                      # Sync script
     ├── index.sqlite3                # Primary query layer (not in Git)

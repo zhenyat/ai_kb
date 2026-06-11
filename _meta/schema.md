@@ -2,7 +2,7 @@
 
 **Author:** Personal project  
 **Created:** 2026-06-09  
-**Status:** Draft v1 — iterative, subject to revision  
+**Status:** Draft v2 — iterative, subject to revision  
 
 ---
 
@@ -65,8 +65,12 @@ ai-knowledge-base/
 │   └── snippets/                    # Copy-paste fragments
 │
 └── db/
+    ├── sync.py                      # Sync script
     ├── index.sqlite3                # Primary query layer (excluded from Git)
-    └── entries.json                 # Diffable JSON mirror (committed to Git)
+    ├── entries.json                 # Diffable JSON mirror (committed to Git)
+    └── tests/
+        ├── __init__.py              # Required for pytest import resolution
+        └── test_sync.py             # pytest suite — 44 tests
 ```
 
 > **Note:** `index.sqlite3` is listed in `.gitignore`. `entries.json` is the canonical version-controlled representation of the database state.
@@ -194,7 +198,7 @@ CREATE TABLE entries (
     id          TEXT PRIMARY KEY,     -- e.g. 2026-06-09-001-chain-of-thought
     date        TEXT NOT NULL,        -- ISO 8601: 2026-06-09
     topic       TEXT NOT NULL,        -- FK-like ref to tags.yaml topics
-    topic_ru    TEXT,                 -- Russian label from controlled vocabulary
+    topic_ru    TEXT NOT NULL,        -- Russian label from controlled vocabulary (NOT NULL enforced)
     subtopic    TEXT,
     source      TEXT,                 -- conversation | manual | export
     url         TEXT,                 -- original source URL, nullable
@@ -278,8 +282,67 @@ db/index.sqlite3
 
 ---
 
-## 11. Revision History
+## 11. Testing
+
+### Framework
+
+`pytest` — installed in the project `.venv`.
+
+```bash
+pip install pytest
+```
+
+### Test file location
+
+```
+db/tests/
+├── __init__.py       # empty — required for import resolution
+└── test_sync.py      # full test suite
+```
+
+### Running tests
+
+```bash
+# From repo root
+pytest db/tests/test_sync.py -v          # full run with per-test output
+pytest db/tests/test_sync.py -v -x       # stop on first failure
+pytest db/tests/test_sync.py --tb=short  # compact traceback on failure
+```
+
+### Coverage summary
+
+| Test class | What is tested |
+|---|---|
+| `TestParseFrontmatter` | Valid frontmatter, missing block, malformed YAML, non-mapping |
+| `TestValidateEntry` | All 5 required fields, unknown topic, wrong `topic_ru`, valid/invalid `source` values, `models` edge cases |
+| `TestLoadControlledVocabulary` | Correct load, missing file, empty topics section |
+| `TestDatabase` | Schema creation, scalar field insert, junction tables (`entry_models`, `entry_tags`), idempotency of `init_db`, `topic_ru NOT NULL` constraint |
+| `TestExportJson` | File creation, valid JSON output, Cyrillic encoding preserved (`ensure_ascii=False`), models/tags hydration |
+| `TestRegenerateModelIndexes` | Index file created per model, entry ID present, multiple models each get own index, entry count in header |
+| `TestSyncAll` | Happy path end-to-end, dry-run writes nothing, validation failure blocks all writes, empty topics dir, JSON content correctness |
+
+**Total: 44 tests — all must pass before any commit touching `sync.py`.**
+
+### Design principles
+
+- **In-memory SQLite** (`":memory:"`) used for all DB tests — no temp files, no cleanup overhead.
+- **`tmp_path` fixture** (pytest built-in) used for all file I/O tests — isolated per test, auto-cleaned.
+- **`sync_all()`** accepts all paths as explicit parameters, making the full pipeline testable without touching the real repo.
+- Tests are **idempotent** — safe to run repeatedly in any order.
+
+### Pre-commit discipline
+
+Run the test suite before every commit that modifies `sync.py` or `_meta/tags.yaml`:
+
+```bash
+pytest db/tests/test_sync.py -v && git add ... && git commit -m "..."
+```
+
+---
+
+## 12. Revision History
 
 | Version | Date | Changes |
 |---|---|---|
 | v1 | 2026-06-09 | Initial specification |
+| v2 | 2026-06-09 | Added Section 11 — Testing; updated repo layout (db/tests/); `topic_ru NOT NULL` enforced in schema |

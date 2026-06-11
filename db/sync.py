@@ -29,16 +29,16 @@ import yaml  # pip install pyyaml
 
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants  (used by CLI entry point; tests inject paths directly)
 # ---------------------------------------------------------------------------
 
-REPO_ROOT    = Path(__file__).resolve().parent.parent
-TOPICS_DIR   = REPO_ROOT / "topics"
-MODELS_DIR   = REPO_ROOT / "models"
-META_DIR     = REPO_ROOT / "_meta"
-TAGS_YAML    = META_DIR / "tags.yaml"
-DB_PATH      = REPO_ROOT / "db" / "index.sqlite3"
-JSON_PATH    = REPO_ROOT / "db" / "entries.json"
+REPO_ROOT     = Path(__file__).resolve().parent.parent
+TOPICS_DIR    = REPO_ROOT / "topics"
+MODELS_DIR    = REPO_ROOT / "models"
+META_DIR      = REPO_ROOT / "_meta"
+TAGS_YAML     = META_DIR / "tags.yaml"
+DB_PATH       = REPO_ROOT / "db" / "index.sqlite3"
+JSON_PATH     = REPO_ROOT / "db" / "entries.json"
 
 VALID_SOURCES = {"conversation", "manual", "export"}
 
@@ -46,17 +46,18 @@ VALID_SOURCES = {"conversation", "manual", "export"}
 # Helpers
 # ---------------------------------------------------------------------------
 
-def load_controlled_vocabulary() -> dict:
-    """Load topic taxonomy from _meta/tags.yaml.
-    Returns a dict mapping topic slug -> {ru: <label>}.
+def load_controlled_vocabulary(tags_yaml: Path) -> dict:
+    """Load topic taxonomy from tags.yaml.
+    Returns a dict mapping topic slug -> {ru: <label>, ...}.
+    Raises FileNotFoundError or ValueError on bad input.
     """
-    if not TAGS_YAML.exists():
-        abort(f"tags.yaml not found at {TAGS_YAML}")
-    with TAGS_YAML.open(encoding="utf-8") as f:
+    if not tags_yaml.exists():
+        raise FileNotFoundError(f"tags.yaml not found at {tags_yaml}")
+    with tags_yaml.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
     topics = data.get("topics", {})
     if not topics:
-        abort("tags.yaml contains no 'topics' section.")
+        raise ValueError("tags.yaml contains no 'topics' section.")
     return topics
 
 
@@ -162,8 +163,13 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def insert_entry(conn: sqlite3.Connection, fm: dict, file_path: Path) -> None:
-    rel_path = str(file_path.relative_to(REPO_ROOT))
+def insert_entry(
+    conn: sqlite3.Connection,
+    fm: dict,
+    file_path: Path,
+    repo_root: Path,
+) -> None:
+    rel_path = str(file_path.relative_to(repo_root))
 
     conn.execute(
         """
@@ -202,8 +208,8 @@ def insert_entry(conn: sqlite3.Connection, fm: dict, file_path: Path) -> None:
 # JSON export
 # ---------------------------------------------------------------------------
 
-def export_json(conn: sqlite3.Connection) -> list[dict]:
-    """Build a list of fully-hydrated entry dicts and write to entries.json."""
+def export_json(conn: sqlite3.Connection, json_path: Path) -> list[dict]:
+    """Build a list of fully-hydrated entry dicts and write to json_path."""
     conn.row_factory = sqlite3.Row
     rows = conn.execute("SELECT * FROM entries ORDER BY id").fetchall()
 
@@ -228,7 +234,7 @@ def export_json(conn: sqlite3.Connection) -> list[dict]:
         ]
         entries.append(entry)
 
-    JSON_PATH.write_text(
+    json_path.write_text(
         json.dumps(entries, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
@@ -239,7 +245,7 @@ def export_json(conn: sqlite3.Connection) -> list[dict]:
 # Model index regeneration
 # ---------------------------------------------------------------------------
 
-def regenerate_model_indexes(entries: list[dict]) -> None:
+def regenerate_model_indexes(entries: list[dict], models_dir: Path) -> None:
     """Rewrite models/<model>/_index.md for each model found in entries."""
     model_map: dict[str, list[dict]] = {}
     for entry in entries:
@@ -247,7 +253,7 @@ def regenerate_model_indexes(entries: list[dict]) -> None:
             model_map.setdefault(model, []).append(entry)
 
     for model, model_entries in sorted(model_map.items()):
-        index_dir = MODELS_DIR / model
+        index_dir = models_dir / model
         index_dir.mkdir(parents=True, exist_ok=True)
         index_path = index_dir / "_index.md"
 
@@ -272,7 +278,115 @@ def regenerate_model_indexes(entries: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Core pipeline  (path-injectable — used by both CLI and tests)
+# ---------------------------------------------------------------------------
+
+def sync_all(
+    topics_dir: Path,
+    models_dir: Path,
+    db_path: Path,
+    json_path: Path,
+    tags_yaml: Path,
+    repo_root: Path,
+    verbose: bool = False,
+    dry_run: bool = False,
+) -> int:
+    """
+    Full sync pipeline. Returns exit code (0 = success, 1 = error).
+    All paths are explicit parameters — no module-level constants used here.
+    """
+    # 1. Load vocabulary
+    try:
+        vocab = load_controlled_vocabulary(tags_yaml)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"\n[ABORT] {exc}", file=sys.stderr)
+        return 1
+
+    # 2. Discover entry files
+    md_files = sorted(topics_dir.rglob("*.md"))
+    md_files = [
+        f for f in md_files
+        if not f.name.startswith("_") and f.name != "README.md"
+    ]
+
+    if not md_files:
+        print("No entry files found under topics/. Nothing to sync.")
+        return 0
+
+    # 3. Parse and validate
+    valid_entries: list[tuple[dict, Path]] = []
+    error_count = 0
+
+    for md_path in md_files:
+        rel = md_path.relative_to(repo_root)
+        try:
+            fm = parse_frontmatter(md_path)
+        except ValueError as exc:
+            print(f"[ERROR] {rel}: {exc}", file=sys.stderr)
+            error_count += 1
+            continue
+
+        errors = validate_entry(fm, vocab, md_path)
+        if errors:
+            for err in errors:
+                print(f"[ERROR] {rel}: {err}", file=sys.stderr)
+            error_count += 1
+            continue
+
+        valid_entries.append((fm, md_path))
+        if verbose:
+            print(f"[OK]    {rel}")
+
+    if error_count:
+        print(
+            f"\n[ABORT] {error_count} entry file(s) failed validation. "
+            "Fix all errors before syncing.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"\nValidated {len(valid_entries)} entr{'y' if len(valid_entries) == 1 else 'ies'}.")
+
+    if dry_run:
+        print("Dry-run mode — no files written.")
+        return 0
+
+    # 4. Write SQLite3
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+
+    try:
+        init_db(conn)
+        for fm, path in valid_entries:
+            insert_entry(conn, fm, path, repo_root)
+        conn.commit()
+    except sqlite3.Error as exc:
+        conn.rollback()
+        print(f"\n[ABORT] SQLite error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+
+    print(f"SQLite:  {db_path.relative_to(repo_root)}")
+
+    # 5. Write JSON mirror
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    entries = export_json(conn, json_path)
+    conn.close()
+    print(f"JSON:    {json_path.relative_to(repo_root)}")
+
+    # 6. Regenerate model indexes
+    regenerate_model_indexes(entries, models_dir)
+    print("Indexes: models/<model>/_index.md regenerated.")
+
+    print(f"\nSync complete — {len(valid_entries)} entries written.\n")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
 # ---------------------------------------------------------------------------
 
 def main() -> None:
@@ -289,82 +403,17 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    vocab = load_controlled_vocabulary()
-
-    # ---- Discover and validate all entry files ----------------------------
-    md_files = sorted(TOPICS_DIR.rglob("*.md"))
-    # Skip _index.md or README.md files inside topics/
-    md_files = [f for f in md_files if not f.name.startswith("_") and f.name != "README.md"]
-
-    if not md_files:
-        print("No entry files found under topics/. Nothing to sync.")
-        sys.exit(0)
-
-    valid_entries: list[tuple[dict, Path]] = []
-    error_count = 0
-
-    for md_path in md_files:
-        rel = md_path.relative_to(REPO_ROOT)
-        try:
-            fm = parse_frontmatter(md_path)
-        except ValueError as exc:
-            print(f"[ERROR] {rel}: {exc}", file=sys.stderr)
-            error_count += 1
-            continue
-
-        errors = validate_entry(fm, vocab, md_path)
-        if errors:
-            for err in errors:
-                print(f"[ERROR] {rel}: {err}", file=sys.stderr)
-            error_count += 1
-            continue
-
-        valid_entries.append((fm, md_path))
-        if args.verbose:
-            print(f"[OK]    {rel}")
-
-    if error_count:
-        abort(
-            f"{error_count} entry file(s) failed validation. "
-            "Fix all errors before syncing."
-        )
-
-    print(f"\nValidated {len(valid_entries)} entr{'y' if len(valid_entries) == 1 else 'ies'}.")
-
-    if args.dry_run:
-        print("Dry-run mode — no files written.")
-        sys.exit(0)
-
-    # ---- Write SQLite3 ----------------------------------------------------
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-
-    try:
-        init_db(conn)
-        for fm, path in valid_entries:
-            insert_entry(conn, fm, path)
-        conn.commit()
-    except sqlite3.Error as exc:
-        conn.rollback()
-        abort(f"SQLite error: {exc}")
-    finally:
-        conn.close()
-
-    print(f"SQLite:  {DB_PATH.relative_to(REPO_ROOT)}")
-
-    # ---- Write JSON mirror ------------------------------------------------
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    entries = export_json(conn)
-    conn.close()
-    print(f"JSON:    {JSON_PATH.relative_to(REPO_ROOT)}")
-
-    # ---- Regenerate model indexes -----------------------------------------
-    regenerate_model_indexes(entries)
-    print(f"Indexes: models/<model>/_index.md regenerated.")
-
-    print(f"\nSync complete — {len(valid_entries)} entries written.\n")
+    exit_code = sync_all(
+        topics_dir=TOPICS_DIR,
+        models_dir=MODELS_DIR,
+        db_path=DB_PATH,
+        json_path=JSON_PATH,
+        tags_yaml=TAGS_YAML,
+        repo_root=REPO_ROOT,
+        verbose=args.verbose,
+        dry_run=args.dry_run,
+    )
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
